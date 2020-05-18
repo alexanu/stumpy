@@ -1,5 +1,5 @@
 ==========
-stumpy API
+STUMPY API
 ==========
 
 .. rubric:: Overview
@@ -9,10 +9,13 @@ stumpy API
 
     stumpy.stump
     stumpy.stumped
+    stumpy.gpu_stump
     stumpy.mstump
     stumpy.mstumped
     stumpy.atsc
     stumpy.allc
+    stumpy.fluss
+    stumpy.floss
 
 stump
 =====
@@ -23,6 +26,11 @@ stumped
 =======
 
 .. autofunction:: stumpy.stumped
+
+gpu-stump
+=======
+
+.. autofunction:: stumpy.gpu_stump
 
 mstump
 ======
@@ -43,3 +51,13 @@ allc
 ====
 
 .. autofunction:: stumpy.allc
+
+fluss
+====
+
+.. autofunction:: stumpy.fluss
+
+floss
+====
+
+.. autofunction:: stumpy.floss

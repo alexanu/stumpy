@@ -2,9 +2,11 @@
 # Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause BSD license.
 # STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
 
-import numpy as np
-from . import core, _stump, _get_first_stump_profile, _get_QT
 import logging
+
+import numpy as np
+
+from . import core, _stump, _get_first_stump_profile, _get_QT
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,9 @@ def stumped(dask_client, T_A, m, T_B=None, ignore_trivial=True):
     Notes
     -----
 
-    DOI: 10.1109/ICDM.2016.0085
+    `DOI: 10.1109/ICDM.2016.0085 \
+    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
+
     See Table II
 
     This is a Dask distributed implementation of stump that scales
@@ -79,12 +83,33 @@ def stumped(dask_client, T_A, m, T_B=None, ignore_trivial=True):
     Note that left and right matrix profiles are only available for self-joins.
     """
 
-    T_A = core.df_to_array(T_A)
+    T_A = np.asarray(T_A)
+    if T_A.ndim != 1:  # pragma: no cover
+        raise ValueError(
+            f"T_A is {T_A.ndim}-dimensional and must be 1-dimensional. "
+            "For multidimensional STUMP use `stumpy.mstump` or `stumpy.mstumped`"
+        )
+    n = T_A.shape[0]
+
+    T_A = T_A.copy()
+    T_A[np.isinf(T_A)] = np.nan
     core.check_dtype(T_A)
+
     if T_B is None:
         T_B = T_A
-    T_B = core.df_to_array(T_B)
+        ignore_trivial = True
+
+    T_B = np.asarray(T_B)
+    if T_B.ndim != 1:  # pragma: no cover
+        raise ValueError(
+            f"T_B is {T_B.ndim}-dimensional and must be 1-dimensional. "
+            "For multidimensional STUMP use `stumpy.mstump` or `stumpy.mstumped`"
+        )
+    T_B = T_B.copy()
+    T_B[np.isinf(T_B)] = np.nan
     core.check_dtype(T_B)
+
+    core.check_window_size(m)
 
     if ignore_trivial is False and core.are_arrays_equal(T_A, T_B):  # pragma: no cover
         logger.warning("Arrays T_A, T_B are equal, which implies a self-join.")
@@ -102,12 +127,25 @@ def stumped(dask_client, T_A, m, T_B=None, ignore_trivial=True):
     M_T, Σ_T = core.compute_mean_std(T_A, m)
     μ_Q, σ_Q = core.compute_mean_std(T_B, m)
 
+    T_A[np.isnan(T_A)] = 0
+
     out = np.empty((l, 4), dtype=object)
     profile = np.empty((l,), dtype="float64")
     indices = np.empty((l, 3), dtype="int64")
 
     hosts = list(dask_client.ncores().keys())
     nworkers = len(hosts)
+
+    step = 1 + l // nworkers
+    QT_futures = []
+    QT_first_futures = []
+    for i, start in enumerate(range(0, l, step)):
+        all_start_profiles, indices[start, :] = _get_first_stump_profile(
+            start, T_A, T_B, m, excl_zone, M_T, Σ_T, ignore_trivial
+        )
+        profile[start] = all_start_profiles[0]
+
+    T_B[np.isnan(T_B)] = 0
 
     # Scatter data to Dask cluster
     T_A_future = dask_client.scatter(T_A, broadcast=True)
@@ -117,14 +155,7 @@ def stumped(dask_client, T_A, m, T_B=None, ignore_trivial=True):
     μ_Q_future = dask_client.scatter(μ_Q, broadcast=True)
     σ_Q_future = dask_client.scatter(σ_Q, broadcast=True)
 
-    step = 1 + l // nworkers
-    QT_futures = []
-    QT_first_futures = []
     for i, start in enumerate(range(0, l, step)):
-        profile[start], indices[start, :] = _get_first_stump_profile(
-            start, T_A, T_B, m, excl_zone, M_T, Σ_T, ignore_trivial
-        )
-
         QT, QT_first = _get_QT(start, T_A, T_B, m)
 
         QT_future = dask_client.scatter(QT, workers=[hosts[i]])

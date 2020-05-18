@@ -6,9 +6,12 @@ STUMPY documentation
    :maxdepth: 2
    :caption: Contents:
 
+   motivation
    install
    api
    tutorials
+   help
+   Code Repository <https://github.com/TDAmeritrade/stumpy>
 
 .. include:: ../README.rst
 

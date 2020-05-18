@@ -1,3 +1,4 @@
+.idea
 *csv
 *checkout
 *pyc
@@ -15,3 +16,6 @@ dist
 .vscode
 docs/_build
 *DS_Store*
+.venv
+.mypy_cache
+.directory

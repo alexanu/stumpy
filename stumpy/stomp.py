@@ -2,14 +2,16 @@
 # Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause BSD license.
 # STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
 
-import numpy as np
-from . import core, stamp
 import logging
+
+import numpy as np
+
+from . import core, stamp
 
 logger = logging.getLogger(__name__)
 
 
-def stomp(T_A, m, T_B=None, ignore_trivial=True):
+def _stomp(T_A, m, T_B=None, ignore_trivial=True):
     """
     Compute "Scalable Time series Ordered-search Matrix Profile" (STOMP)
 
@@ -19,11 +21,11 @@ def stomp(T_A, m, T_B=None, ignore_trivial=True):
         The time series or sequence for which the matrix profile index will
         be returned
 
-    T_B : ndarray
-        The time series or sequence that contain your query subsequences
-
     m : int
         Window size
+
+    T_B : ndarray
+        The time series or sequence that contain your query subsequences
 
     ignore_trivial : bool
         `True` if this is a self join and `False` otherwise (i.e., AB-join).
@@ -37,7 +39,9 @@ def stomp(T_A, m, T_B=None, ignore_trivial=True):
 
     Notes
     -----
-    DOI: 10.1109/ICDM.2016.0085
+    `DOI: 10.1109/ICDM.2016.0085 \
+    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
+
     See Table II
 
     Timeseries, T_B, will be annotated with the distance location
@@ -61,10 +65,35 @@ def stomp(T_A, m, T_B=None, ignore_trivial=True):
 
     Note that left and right matrix profiles are only available for self-joins.
     """
+
+    logger.warning(
+        "stumpy.stomp._stomp is not supported and only provided for reference."
+    )
+    logger.warning(
+        "Please use the Numba JIT-compiled stumpy.stump or stumpy.gpu_stump instead."
+    )
+
+    T_A = np.asarray(T_A)
+    if T_A.ndim != 1:  # pragma: no cover
+        raise ValueError(f"T_A is {T_A.ndim}-dimensional and must be 1-dimensional. ")
+    n = T_A.shape[0]
+
+    T_A = T_A.copy()
+    T_A[np.isinf(T_A)] = np.nan
     core.check_dtype(T_A)
+
     if T_B is None:
         T_B = T_A
+        ignore_trivial = True
+
+    T_B = np.asarray(T_B)
+    T_B = T_B.copy()
+    if T_B.ndim != 1:  # pragma: no cover
+        raise ValueError(f"T_B is {T_B.ndim}-dimensional and must be 1-dimensional. ")
+    T_B[np.isinf(T_B)] = np.nan
     core.check_dtype(T_B)
+
+    core.check_window_size(m)
 
     if ignore_trivial is False and core.are_arrays_equal(T_A, T_B):  # pragma: no cover
         logger.warning("Arrays T_A, T_B are equal, which implies a self-join.")
@@ -77,11 +106,11 @@ def stomp(T_A, m, T_B=None, ignore_trivial=True):
     n = T_B.shape[0]
     l = n - m + 1
     excl_zone = int(np.ceil(m / 4))  # See Definition 3 and Figure 3
-    M_T, Σ_T = core.compute_mean_std(T_A, m)
-    QT = core.sliding_dot_product(T_B[:m], T_A)
-    QT_first = core.sliding_dot_product(T_A[:m], T_B)
 
+    M_T, Σ_T = core.compute_mean_std(T_A, m)
     μ_Q, σ_Q = core.compute_mean_std(T_B, m)
+
+    T_A[np.isnan(T_A)] = 0
 
     out = np.empty((l, 4), dtype=object)
 
@@ -94,33 +123,46 @@ def stomp(T_A, m, T_B=None, ignore_trivial=True):
         IR = -1  # No left and right matrix profile available
     out[0] = P, I, -1, IR
 
+    T_B[np.isnan(T_B)] = 0
+
+    QT = core.sliding_dot_product(T_B[:m], T_A)
+    QT_first = core.sliding_dot_product(T_A[:m], T_B)
+
     k = T_A.shape[0] - m + 1
     for i in range(1, l):
         QT[1:] = (
             QT[: k - 1] - T_B[i - 1] * T_A[: k - 1] + T_B[i - 1 + m] * T_A[-(k - 1) :]
         )
         QT[0] = QT_first[i]
-        D = core.calculate_distance_profile(m, QT, μ_Q[i], σ_Q[i], M_T, Σ_T)
+
+        D = core._calculate_squared_distance_profile(
+            m, QT, μ_Q[i].item(0), σ_Q[i].item(0), M_T, Σ_T
+        )
         if ignore_trivial:
             zone_start = max(0, i - excl_zone)
             zone_stop = min(k, i + excl_zone)
-            D[zone_start:zone_stop] = np.inf
-        I = np.argmin(D)
-        P = D[I]
+            D[zone_start : zone_stop + 1] = np.inf
 
-        # Get left and right matrix profiles for self-joins
+        I = np.argmin(D)
+        P = np.sqrt(D[I])
+        if P == np.inf:
+            I = -1
+
+        # Get left and right matrix profiles
+        IL = -1
+        PL = np.inf
         if ignore_trivial and i > 0:
             IL = np.argmin(D[:i])
-            if zone_start <= IL <= zone_stop:
-                IL = -1
-        else:
+            PL = D[IL]
+        if PL == np.inf or zone_start <= IL < zone_stop:
             IL = -1
 
+        IR = -1
+        PR = np.inf
         if ignore_trivial and i + 1 < D.shape[0]:
             IR = i + 1 + np.argmin(D[i + 1 :])
-            if zone_start <= IR <= zone_stop:
-                IR = -1
-        else:
+            PR = D[IR]
+        if PR == np.inf or zone_start <= IR < zone_stop:
             IR = -1
 
         out[i] = P, I, IL, IR

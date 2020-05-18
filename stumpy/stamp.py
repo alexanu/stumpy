@@ -3,6 +3,7 @@
 # STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
 
 import numpy as np
+
 from . import core
 
 
@@ -24,7 +25,7 @@ def mass(Q, T, M_T, Σ_T, trivial_idx=None, excl_zone=0, left=False, right=False
     Σ_T : ndarray
         Sliding standard deviation for `T`
 
-    trivial_idx : int
+    trivial_idx : (optional) int
         Index for the start of the trivial self-join
 
     excl_zone : int
@@ -46,11 +47,13 @@ def mass(Q, T, M_T, Σ_T, trivial_idx=None, excl_zone=0, left=False, right=False
     I : ndarray
         Matrix profile indices
     """
+
     D = core.mass(Q, T, M_T, Σ_T)
+
     if trivial_idx is not None:
         zone_start = max(0, trivial_idx - excl_zone)
         zone_stop = min(T.shape[0] - Q.shape[0] + 1, trivial_idx + excl_zone)
-        D[zone_start:zone_stop] = np.inf
+        D[zone_start : zone_stop + 1] = np.inf
 
         # Get left and right matrix profiles
         IL = -1
@@ -58,20 +61,22 @@ def mass(Q, T, M_T, Σ_T, trivial_idx=None, excl_zone=0, left=False, right=False
         if D[:trivial_idx].size:
             IL = np.argmin(D[:trivial_idx])
             PL = D[IL]
-        if zone_start <= IL <= zone_stop:
+        if PL == np.inf or zone_start <= IL < zone_stop:
             IL = -1
 
         IR = -1
-        PR = -1
-        if D[trivial_idx:].size:
-            IR = trivial_idx + np.argmin(D[trivial_idx:])
+        PR = np.inf
+        if D[trivial_idx + 1 :].size:
+            IR = trivial_idx + 1 + np.argmin(D[trivial_idx + 1 :])
             PR = D[IR]
-        if zone_start <= IR <= zone_stop:
+        if PR == np.inf or zone_start <= IR < zone_stop:
             IR = -1
 
     # Element-wise Min
     I = np.argmin(D)
     P = D[I]
+    if P == np.inf:
+        I = -1
 
     if trivial_idx is not None and left:
         I = IL
@@ -112,7 +117,9 @@ def stamp(T_A, T_B, m, ignore_trivial=False):
 
     Notes
     -----
-    DOI: 10.1109/ICDM.2016.0179
+    `DOI: 10.1109/ICDM.2016.0179 \
+    <https://www.cs.ucr.edu/~eamonn/PID4481997_extend_Matrix%20Profile_I.pdf>`__
+
     See Table III
 
     Timeseries, T_B, will be annotated with the distance location
@@ -123,11 +130,25 @@ def stamp(T_A, T_B, m, ignore_trivial=False):
     T_B.shape[0]-m+1
     """
 
+    if T_A.ndim != 1:  # pragma: no cover
+        raise ValueError(f"T_A is {T_A.ndim}-dimensional and must be 1-dimensional. ")
+
+    T_A = T_A.copy()
+    T_A[np.isinf(T_A)] = np.nan
     core.check_dtype(T_A)
+
+    T_B = T_B.copy()
+    T_B[np.isinf(T_B)] = np.nan
+    if T_B.ndim != 1:  # pragma: no cover
+        raise ValueError(f"T_B is {T_B.ndim}-dimensional and must be 1-dimensional. ")
     core.check_dtype(T_B)
+
+    core.check_window_size(m)
     subseq_T_B = core.rolling_window(T_B, m)
     excl_zone = int(np.ceil(m / 2))
     M_T, Σ_T = core.compute_mean_std(T_A, m)
+
+    T_A[np.isnan(T_A)] = 0
 
     # Add exclusionary zone
     if ignore_trivial:

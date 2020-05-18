@@ -8,14 +8,15 @@ def readme():
 
 configuration = {
     "name": "stumpy",
-    "version": "1.0.0",
-    "python_requires=": ">=3.5",
+    "version": "1.3.1",
+    "python_requires=": ">=3.6",
     "author": "Sean M. Law",
     "author_email": "seanmylaw@gmail.com",
     "description": (
-        "A powerful and scalable library that can be used"
+        "A powerful and scalable library that can be used "
         "for a variety of time series data mining tasks"
     ),
+    "long_description_content_type": "text/x-rst",
     "long_description": readme(),
     "classifiers": [
         "Development Status :: 3 - Alpha",
@@ -29,7 +30,7 @@ configuration = {
         "Operating System :: POSIX",
         "Operating System :: Unix",
         "Operating System :: MacOS",
-        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
     ],
     "keywords": "time series matrix profile motif discord",
     "url": "https://github.com/TDAmeritrade/stumpy",
